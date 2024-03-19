@@ -40,7 +40,7 @@ class CreateAllProductModelView(GenericAPIView):
     def post(self, request):
         data = request.data
         
-        # Check if department exists
+
         department_data = data.get('department_info', {})
         department_serializer = DepartmentSerializer(data=department_data)
         if department_serializer.is_valid():
@@ -53,7 +53,6 @@ class CreateAllProductModelView(GenericAPIView):
                 department_instance = department_serializer.save()
                 department_message = "New department added. Basic info and price cost created."
             
-            # Save basic info in a transaction
             try:
                 with transaction.atomic():
                     # Check if basic info exists
@@ -71,7 +70,6 @@ class CreateAllProductModelView(GenericAPIView):
                     if basic_info_serializer.is_valid():
                         basic_info_instance = basic_info_serializer.save()
                         
-                        # Save price cost
                         price_cost_data = data.get('price_cost', {})
                         price_cost_data['basic_info_id'] = basic_info_instance.product_id
                         price_cost_serializer = PriceCostSerializer(data=price_cost_data)
@@ -84,7 +82,6 @@ class CreateAllProductModelView(GenericAPIView):
                                 "price_cost": price_cost_serializer.data,
                             }
                             return Response({"message": department_message, "data": response_data}, status=status.HTTP_201_CREATED)
-                    # Only one else block to handle any validation errors for basic info or department
                     else:
                         raise Exception(basic_info_serializer.errors)
             except Exception as e:
