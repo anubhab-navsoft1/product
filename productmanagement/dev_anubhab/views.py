@@ -143,19 +143,3 @@ class DeleteProductView(GenericAPIView):
         
         except (Basic_Info.DoesNotExist, PriceCost.DoesNotExist) as e:
             return Response({"message": str(e)}, status=status.HTTP_404_NOT_FOUND)
-class DeleteAllItemsView(GenericAPIView):
-    def delete(self, request):
-        try:
-            # Delete all Basic_Info objects
-            Basic_Info.objects.all().delete()
-            
-            # Delete all Department objects
-            Department.objects.all().delete()
-            
-            # Delete all PriceCost objects
-            PriceCost.objects.all().delete()
-            
-            return Response({"message": "All items deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
-        
-        except Exception as e:
-            return Response({"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
