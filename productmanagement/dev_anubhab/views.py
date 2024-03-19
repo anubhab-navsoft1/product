@@ -8,33 +8,41 @@ from django.http import JsonResponse
 from django.db.models import Count
 #### just for getting the data for the uuid field ####
 class GetAllApi(GenericAPIView):
-    def get(self, request):
-        try:
-            # Retrieve all Basic_Info objects
-            basic_info_instances = Basic_Info.objects.all()
-            
-            # Serialize Basic_Info objects
-            basic_info_serializer = BasicInfoSerializer(basic_info_instances, many=True)
-            
-            # Retrieve all Department objects
-            department_instances = Department.objects.all()
-            
-            # Serialize Department objects
-            department_serializer = DepartmentSerializer(department_instances, many=True)
-            
-            # Retrieve all PriceCost objects
-            price_cost_instances = PriceCost.objects.all()
-            
-            # Serialize PriceCost objects
-            price_cost_serializer = PriceCostSerializer(price_cost_instances, many=True)
-            
-            # Return serialized data for all items
-            return Response({
-                "basic_info": basic_info_serializer.data,
-            }, status=status.HTTP_200_OK)
+    queryset = Basic_Info.objects.select_related('department_id').all()
+    def get(self,request):
+        items = self.get_queryset()
+
+        search_query = request.query_params.get('search', None)
+
+        if search_query:
+            items = items.filter(Q(product_name__icontains=search_query) | Q(sku__icontains=search_query) | Q(department_id__name__icontains=search_query))
+
+        sort_by = request.query_params.get('sort_by', None)
+        sort_order = request.query_params.get('sort_order', None)
+
+        if sort_by:
+            if sort_order == 'descending':
+                sort_by = '-' + sort_by
+            items = items.order_by(sort_by)
+
+        basic_info_serializer = BasicInfoSerializer(items, many=True).data
+        department_serializer = DepartmentSerializer([item.department_id for item in items], many=True).data
+        price_cost_serializer = []
+        for item in items:
+            price_cost_serializer.extend(PriceCostSerializer(item.pricecost_set.all(), many=True).data)
         
-        except Exception as e:
-            return Response({"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        context = []
+        for basic_info, department, price_cost in zip(basic_info_serializer, department_serializer, price_cost_serializer):
+            department_instance = Department.objects.get(id=department['id'])
+            basic_info['department_id'] = department_instance.id if department_instance else None
+            context.append({
+                "basic_info": basic_info,
+                "department": DepartmentSerializer(department_instance).data if department_instance else {},
+                "price_cost": price_cost,
+            })
+
+
+        return Response(context)
 
 class CreateAllProductModelView(GenericAPIView):
     def post(self, request):
@@ -57,27 +65,24 @@ class CreateAllProductModelView(GenericAPIView):
                 with transaction.atomic():
                     # Check if basic info exists
                     basic_info_data = data.get('basic_info', {})
-                    existing_basic_info = Basic_Info.objects.filter(product_name=basic_info_data.get('product_name')).first()
+                    existing_basic_info = Basic_Info.objects.filter(sku = basic_info_data.get('sku')).first()
                     if existing_basic_info:
                         return Response({"message": "Basic info already exists."}, status=status.HTTP_400_BAD_REQUEST)
                     
-                    # Get the count of existing items in the department and increment by one
-                    position_in_department = Basic_Info.objects.filter(department_id=department_instance.id).count() + 1
                     basic_info_data['department_id'] = department_instance.id
-                    basic_info_data['position_in_department'] = position_in_department
                     
                     basic_info_serializer = BasicInfoSerializer(data=basic_info_data)
                     if basic_info_serializer.is_valid():
                         basic_info_instance = basic_info_serializer.save()
                         
                         price_cost_data = data.get('price_cost', {})
+                        print("------------->>>", price_cost_data)
                         price_cost_data['basic_info_id'] = basic_info_instance.product_id
                         price_cost_serializer = PriceCostSerializer(data=price_cost_data)
                         if price_cost_serializer.is_valid():
                             price_cost_serializer.save()
                             response_data = {
                                 "department_info": DepartmentSerializer(department_instance).data,
-                                "position_in_department": position_in_department,
                                 "basic_info": basic_info_serializer.data,
                                 "price_cost": price_cost_serializer.data,
                             }
